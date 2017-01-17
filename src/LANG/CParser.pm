@@ -67,7 +67,7 @@ This functions update @types array via parsing typedef
     Argument 0 is a string with typedef
 =cut
 sub parse_typedef($) {
-    if ($_[0] =~ /^typedef .* (\w+) ?$/) {
+    if ($_[0] =~ m/^typedef .* (\w+) ?$/) {
         push(@types, $1);
     }
 }
@@ -146,7 +146,7 @@ sub parse_local_variables($$);
 sub parse_local_variables($$) {
     my $block_name = shift;
     my $block      = shift;
-    my $types_regexp = join("\b|", @types);
+    my $types_regexp = join("|", @types);
 
     my %variables;
     my %local_variables;
@@ -171,7 +171,7 @@ sub parse_local_variables($$) {
 
     $block = Util::trim($block);
     $block =~ s/^\{\s+(.*?)\s+\}$/$1/;
-
+    
     # Cut all local block, loops and branches
     # from function's body and put them in array @local_blocks
     my $brackets  = '(\{([^}{]*?(?R)?[^}{]*?)+\})';
@@ -190,7 +190,7 @@ sub parse_local_variables($$) {
     foreach (@splited) {    
         $_ = Util::trim($_);
         $_ = Util::squeeze($_);
-        if (s/.*(?=$types_regexp[^()])//) {
+        if (m/$types_regexp/) {
             if (/^($types_regexp) ([^()]+,[^()].*)$/) {                
                 my $type = $1;
                 my @splited_names = split(/,/, $2);
