@@ -140,7 +140,6 @@ sub parse_body($$) {
     return parse_local_variables("body", $body);
 }
 
-
 #recursive parse body and its local blocks
 sub parse_local_variables($$);
 sub parse_local_variables($$) {
@@ -216,12 +215,35 @@ sub parse_local_variables($$) {
         my $counter = 0;
         foreach (@local_blocks) {
            my %lvars = parse_local_variables($block_name . "_" . $counter, $_);
-           $variables{$block_name . "_" . $counter} = \%lvars;
+           foreach (keys %lvars) {
+               $variables{$_} = $lvars{$_};
+           }
            $counter += 1;
         }
     }
 
     return %variables;
+}
+
+=item B<typeof($)>
+
+This function accept function name, trace and variable, which type function must detect.
+    Argument 0 is a function's name
+    Argument 1 is a variable, which type is nessary to determinate
+    Argument 1 is a trace to this variable
+    
+    Returns type of variable
+=cut
+
+sub typeof($$$) {
+    my $func_name = shift // return undef;
+    my $var       = shift // return undef;
+    my $trace     = shift // return undef;
+    my $type      = undef;
+
+    my $func_descr = $functions{$func_name};    
+    my $leaf      = $func_descr->{'vars'}->{$trace} // return undef;
+    return $leaf->{$var};
 }
 
 1;
