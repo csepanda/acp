@@ -55,26 +55,115 @@ Array of C standart variable storage class specifiers
 
 
 =item B<%functions>
-
 Hash of functions: name of function => link to function's description.
 =cut
-
 our %functions;
 
-=item B<parse_typedef($)>
+=item B<%global_variables>
+Hash of global variables: variable's name => its type
+=cut
+our %global_variables;
 
+
+
+=item B<parse_typedef($)>
 This functions update @types array via parsing typedef
     Argument 0 is a string with typedef
 =cut
 sub parse_typedef($) {
-    if ($_[0] =~ m/^typedef .* (\w+) ?$/) {
-        push(@types, $1);
+    my $_ = shift;
+    push (@types, $1) if (m/^typedef .* (\w+) ?;$/);
+    push (@types, $1) if (m/((?:struct|union) \w+) ?\{/);
+}
+
+
+
+=item B<parse_variable($)>
+This functions update hash from arg with variable-name => its type
+    Argument 0 is a string with variable definition
+    Argmuent 1 is a link to var-type hash
+=cut
+sub parse_variable($$) {
+    my $_    = shift // die "nothing to parse";
+    my $vars = shift // die "nowhere to store";
+    my $type = undef;
+
+    my $types_regexp = "(?:" . join("|", @types) . ")";
+    my $types_q_regexp = join("|", @types_qualifiers);
+    my $types_m_regexp = join("|", @types_modifiers);
+    my $types_c_regexp = join("|", @types_classes);
+
+    s/\b$types_q_regexp|$types_c_regexp|$types_m_regexp\b//g;
+    s/ ((?:\*+ *?)+) *(?=\w+)/$1 /;
+    s/\* \*/**/g;
+    s/^\s+|\s+$//g;
+
+    if (m/\{/) { # anonymous struct/union variable declaration
+        $type = $1 if s/(?:struct|union) (\w+) ?\{.*\}//;
+        unless ($type) {
+            $type = "_-_anon_struct_-_";
+            s/(?:struct|union) ?\{.*\}//;
+        }
+        s/^\s+|\s+$//g;
+    } else {
+        $type = $1 if s/^((?:(?:struct|union) )?[\w*]+) //; 
+        die "type isn't matched" unless $type;
     }
+
+    foreach (split(/ ?, ?| ?, ?/, $_)) {
+        s/(\w+)\b.*$/$1/;
+        $vars->{$_} = $type;
+    }
+}
+
+
+
+=item B<clean_source($)>
+This function removes all macroses from C source-file :
+    Argument 0 is a multiple line string with C source
+    returns multiline string with C-lang source;
+=cut
+sub clean_source($) {
+    $_ = shift // return undef;
+    s/#[^\n]+\\\n(?:[^\n]*\\\n)*[^\\n]*\n//g;
+    s/#[^\n]+\n//g;
+    return $_;
+}
+
+=item B<parse_sorce($)>
+This function splits and parses a C source-file:
+    Argument 0 is a multiple line string with C source
+=cut
+sub parse_source($) {
+    my $src_str  = shift // return undef; 
+    my $src      = Util::squeeze(Util::trim(clean_source($src_str)));
+    my %src_tree;
+    my @global_vars;
+    my @functions;
+    my %vars;
+    my @typedefs;
+
+    my $brackets    = '(\{([^}{]*?(?2)?[^}{]*?)+\})';
+    my $func_regexp = '(?:\w+ )+\w+\([^)(]*?\) ?' . $brackets;
+    my $stun_regexp = '(?:struct|union)(?: \w*) ?'  . $brackets;    
+    my $tydf_regexp = 'typedef ' . $stun_regexp . ' ?\w+ ?;';
+    my $glvr_regexp = '(?:[\w*]+ )+?(?:[\w*]+ ?(?:= ?[^;]+)?(?:,? )?)+;';
+    my $stun_full_r = $stun_regexp .' ?.*?;';
+    # extracting functions, typedefs and global variables
+    push (@functions,   $1) while ($src =~ s/($func_regexp)//);
+    push (@typedefs,    $1) while ($src =~ s/($tydf_regexp)//);
+    push (@global_vars, $1) while ($src =~ s/($stun_full_r)//);
+    push (@global_vars, $1) while ($src =~ s/($glvr_regexp)//);
+
+    # parsing
+    parse_typedef ($_        ) foreach @typedefs;
+    parse_function($_        ) foreach @functions;
+    parse_variable($_, \%vars) foreach @global_vars;
 }
 
 =item B<parse_function($)>
 
-This function is a C language function parser. Updatas B<%functions> hash with a function name and its variable-types tree.
+This function is a C language function parser. Updates B<%functions> hash with a function name and its variable-types tree.
     Argument 0 is a function signature and body.
 =cut
 sub parse_function($) {
