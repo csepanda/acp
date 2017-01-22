@@ -111,6 +111,10 @@ sub parse_arguments($$) {
 
     my @splited = split(/,/, $func_args);
     foreach (@splited) {
+        my $types_q_regexp = join("|", @types_qualifiers);
+        $_ =~ s/\b$types_q_regexp\b//g;
+        $_ =~ s/ *((?:\** *)*)(?=\w+$)/$1 /;
+        $_ =~ s/\* \*/**/g;
         my @arg = split(/ (?=\w+$)/, $_, 2);
         die "Wrong argument format: \n" . 
             "\tno type or name --> [" . $_ ."]\n" . 
@@ -145,14 +149,15 @@ sub parse_local_variables($$);
 sub parse_local_variables($$) {
     my $block_name = shift;
     my $block      = shift;
-    my $types_regexp = join("|", @types);
+    my $types_regexp = "(?:" . join("|", @types) . ")";
+    my $types_q_regexp = join("|", @types_qualifiers);
 
     my %variables;
     my %local_variables;
     my @local_blocks;
 
     $block = Util::trim($block);
-    if ($block =~ /^for \((.*?);/) {
+    if ($block =~ /^for \((.*?)(?:=.*)?;/) {
         $_ = $1;
         if (/($types_regexp) (.*)$/) {
             my $type = $1;
@@ -184,13 +189,16 @@ sub parse_local_variables($$) {
     my $regex     = "$if|$else|$for|$while|$do_while|$switch|$brackets";
     while ($block =~ s/$regex//) { push(@local_blocks, $&); }
 
-    #parse function's body
+    #parse body
     my @splited = split(/;/, $block);
     foreach (@splited) {    
-        $_ = Util::trim($_);
-        $_ = Util::squeeze($_);
         if (m/$types_regexp/) {
-            if (/^($types_regexp) ([^()]+,[^()].*)$/) {                
+            $_ =~ s/\b$types_q_regexp\b//g;
+            $_ =~ s/ *((?:\** *)*)(?=\w+$)/$1 /;
+            $_ =~ s/\* \*/**/g;
+            $_ = Util::trim($_);
+            $_ = Util::squeeze($_);
+            if (/^($types_regexp\**) ([^()]+,[^()].*)$/) {                
                 my $type = $1;
                 my @splited_names = split(/,/, $2);
                 foreach (@splited_names) {
@@ -198,19 +206,18 @@ sub parse_local_variables($$) {
                         $local_variables{$1} = $type;
                     }
                 }
-            } elsif (/((?:$types_regexp)\*?) (\w+)/) {                
-                my $type = $1;
-                my $name = $2;
-                if ($name =~ s/^(\*)+//) {
-                    $type .= $1;
+            } else {
+                if (/($types_regexp\**) (\w+)/) {                
+                    my $type = $1;
+                    my $name = $2;
+                    $local_variables{$name} = $type;
                 } 
-                $local_variables{$name} = $type;
             }
         }
     }    
     $variables{$block_name . "_local"} = \%local_variables;
 
-    #parse local blocks
+    #local blocks recursive parsing
     if (@local_blocks) {
         my $counter = 0;
         foreach (@local_blocks) {
@@ -235,15 +242,29 @@ This function accept function name, trace and variable, which type function must
     Returns type of variable
 =cut
 
+sub typeof($$$);
 sub typeof($$$) {
     my $func_name = shift // return undef;
     my $var       = shift // return undef;
     my $trace     = shift // return undef;
     my $type      = undef;
+    my $tree      = $functions{$func_name}->{'vars'};
 
-    my $func_descr = $functions{$func_name};    
-    my $leaf      = $func_descr->{'vars'}->{$trace} // return undef;
-    return $leaf->{$var};
+    if ($trace =~ m/body/) {
+        $tree  = $tree->{'body'};
+        unless ($type = $tree->{$trace}->{$var}) {
+            $trace =~ s/\d+_(?=local)//;
+            if ($trace eq 'body_local' && !$tree->{'body_local'}->{$var}) {
+                $trace = 'arguments';
+            }
+            $type = typeof ($func_name, $var, $trace); 
+        }
+        return $type;
+    } elsif ($trace eq 'arguments') {
+        return $tree->{$trace}->{$var};
+    }
+
+    return undef;
 }
 
 1;
