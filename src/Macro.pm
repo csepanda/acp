@@ -49,7 +49,6 @@ Substitutes function-like macro's name in the code with macro's body.
     Argument 1 is a macro's name
     Argument 2 is a macro's arguments
     Argument 3 is a macro's body
-    Returns  count of substitution
 =cut
 
 sub sub_define_function_like($$$$) {
@@ -71,7 +70,6 @@ sub sub_define_function_like($$$$) {
         }
         $$src =~ s/$macro_name\($tmp\)/$macro/;
     }
-    return ($$src =~ s/\b$macro_name\b/$macro_body/g);
 }
 
 =head1 AUTHOR
