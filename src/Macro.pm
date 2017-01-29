@@ -27,6 +27,11 @@ B<Macro> module provides subroutines to preprocess macroses in source code
 package Macro;
 require Exporter;
 
+=item B<@macroses> 
+Array of hash with macro's description
+=cut
+our @macroses;
+
 =item B<sub_define_object_like($$$)>
 Substitutes object-like macro's name in the code with macro's body.
     Argument 0 is a link to string of source-code
@@ -84,6 +89,7 @@ sub preprocess_c_std_src($) {
     $$src_link =~ s/#[^\n]+\\\n(?:[^\n]*\\\n)*[^\\n]*\n//g;
     $$src_link =~ s/#[^\n]+\n//g;
     while ($src_copy =~ m/#define\s+/g) {
+        my %macro;
         my $macro_name;
         my @macro_args;
         my $macro_body;
@@ -94,6 +100,9 @@ sub preprocess_c_std_src($) {
             $macro_body = $3;
             chomp $macro_body;
             $macro_body =~ s/\\\n/\n/g;
+            $macro{macro_name} = $macro_name;
+            $macro{macro_args} = \@macro_args;
+            $macro{macro_body} = $macro_body;
             sub_define_function_like($src_link, $macro_name, 
                                                 \@macro_args, $macro_body);
         } else {
@@ -103,7 +112,10 @@ sub preprocess_c_std_src($) {
             chomp $macro_body;
             $macro_body =~ s/\\\n/\n/g;
             sub_define_object_like($src_link, $macro_name, $macro_body);
+            $macro{macro_name} = $macro_name;
+            $macro{macro_body} = $macro_body;
         }
+        push(@macroses, \%macro);
     }
 }
 
