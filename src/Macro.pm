@@ -66,9 +66,44 @@ sub sub_define_function_like($$$$) {
         return undef if scalar @args != scalar @macro_args;
         for (my $i = 0; $i < scalar @args; $i++) {
             $macro =~ s/(?<!#)#\s*$macro_args[$i]/"$args[$i]"/g;
-            $macro =~ s/(\b|##\s*)$macro_args[$i](\b|\s*##)/$args[$i]/g;
+            $macro =~ s/(?:(?>##\s*)|\b)$macro_args[$i](?:(?>\s*##)|\b)/$args[$i]/g;
         }
         $$src =~ s/$macro_name\($tmp\)/$macro/;
+    }
+}
+
+=item B<preprocess_c_std_src($)>
+Preprocess C-src with default preprocessor. This function preprocess source code only one time in one direction.
+    Argument 0 is a link to string of source code
+=cut
+
+sub preprocess_c_std_src($) {
+    my $src_link = shift // return undef;
+    my $src_copy = $$src_link;
+
+    $$src_link =~ s/#[^\n]+\\\n(?:[^\n]*\\\n)*[^\\n]*\n//g;
+    $$src_link =~ s/#[^\n]+\n//g;
+    while ($src_copy =~ m/#define\s+/g) {
+        my $macro_name;
+        my @macro_args;
+        my $macro_body;
+        if ($src_copy =~ m/\G(\w+)\(/) {
+            $src_copy =~ m/\G(\w+)\((.*?)\)[\t ]*+((?:.*?\\\n)+.*?\n|.*?\n)/;
+            $macro_name = $1;
+            @macro_args = split(/\s*,\s*/, $2);
+            $macro_body = $3;
+            chomp $macro_body;
+            $macro_body =~ s/\\\n/\n/g;
+            sub_define_function_like($src_link, $macro_name, 
+                                                \@macro_args, $macro_body);
+        } else {
+            $src_copy =~ m/\G(\w+)[\t ]*+((?:.*?\\\n)+.*?\n|.*?\n)/;
+            $macro_name = $1;
+            $macro_body = $2;
+            chomp $macro_body;
+            $macro_body =~ s/\\\n/\n/g;
+            sub_define_object_like($src_link, $macro_name, $macro_body);
+        }
     }
 }
 
