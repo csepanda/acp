@@ -24,7 +24,7 @@ B<Macro> module provides subroutines to preprocess macroses in source code
 
 =cut
 
-package Macro;
+package CStdPreprocess;
 require Exporter;
 
 =item B<@macroses> 
