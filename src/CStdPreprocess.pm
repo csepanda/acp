@@ -27,10 +27,10 @@ B<CStdPreprocess> module provides subroutines to preprocess standart C preproces
 package CStdPreprocess;
 require Exporter;
 
-=item B<@macroses> 
-Array of hash with macro's description
+=item B<%macroses> 
+Hash of hash with macro's description
 =cut
-our @macroses;
+our %macroses;
 
 =item B<sub_define_object_like($$$)>
 Substitutes object-like macro's name in the code with macro's body.
@@ -86,11 +86,9 @@ sub handle_ifndef_block($) {
     my $if_block = '((?:s#if.*(?1).*#endif))';
     m/#ifndef\s+(\w+)\s*?\n/;
     my $def_name = $1;
-    say "ifndef " . $def_name;
-    foreach (@macroses) {
-        last unless $def_name;
-        $def_name = undef if ($def_name eq $_->{name});
-    }
+
+    $def_name = undef if $macroses{$def_name};
+
     if ($def_name) {
         s/\A#ifndef.*\n//;
         s/#endif.*\Z//;
@@ -140,10 +138,9 @@ sub handle_ifdef_block($) {
     my $if_block = '((?:s#if.*(?1).*#endif))';
     m/#ifdef\s+(\w+)\s*?\n/;
     my $def_name = $1;
-    foreach (@macroses) {
-        last unless $def_name;
-        $def_name = undef if ($def_name eq $_->{name});
-    }
+
+    $def_name = undef if $macroses{$def_name};
+
     unless ($def_name) {
         s/\A#ifdef.*\n//;
         s/#endif.*\Z//;
@@ -227,20 +224,23 @@ sub preprocess_c_std_src($) {
             my $block = handle_ifdef_block($1);
             $$src_link =~ s/\$_-_IFDEF_-_\$/$block/;
             goto link_updated;
-        } 
+        } elsif (s/^\s*#\s*undef\s+(\w+)//) {
+            $macroses{$1} = undef;
+        }
 
         if (%macro && !$is_multiline) {
             my %new_macro = %macro;
-            push(@macroses, \%new_macro);
+            $macroses{$new_macro{name}} = \%new_macro;
             %macro = ();
         }
     }
 
     $$src_link =~ s/#define[^\n]+\\\n(?:[^\n]*\\\n)*[^\\n]*\n//g;
     $$src_link =~ s/#define[^\n]+\n//g;
-
-    foreach (@macroses) {
-        my $macro = $_;
+    $$src_link =~ s/#undef[^\n]+\n//g;
+    
+    foreach (keys %macroses) {
+        my $macro = $macroses{$_};
         sub_define_object_like  ($src_link, $macro->{name}, 
                                             $macro->{body}) 
                                      unless $macro->{args};
