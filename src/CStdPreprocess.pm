@@ -12,7 +12,7 @@ no  warnings 'experimental';
 
 =head1 NAME
 
-Macro module
+CStdPreprocess module
 
 =head1 SYNOPSIS
 
