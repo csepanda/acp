@@ -16,7 +16,7 @@ Macro module
 
 =head1 SYNOPSIS
 
-B<Macro> module provides subroutines to preprocess macroses in source code
+B<CStdPreprocess> module provides subroutines to preprocess standart C preprocess directives in source code
 
 =head1 DESCRIPTION
 
