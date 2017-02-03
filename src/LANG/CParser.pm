@@ -72,8 +72,8 @@ This functions update @types array via parsing typedef
 =cut
 sub parse_typedef($) {
     my $_ = shift;
-    push (@types, $1) if (m/^typedef .* (\w+) ?;$/);
-    push (@types, $1) if (m/((?:struct|union) \w+) ?\{/);
+    push (@types, $1) if (m/(?s)typedef .* (\w+) ?;$/);
+    push (@types, $1) if (m/((?:struct|union) \w+) ?\{/g);
 }
 
 
