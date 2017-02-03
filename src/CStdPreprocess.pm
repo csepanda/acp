@@ -66,12 +66,12 @@ sub sub_define_function_like($$$$) {
     while ($$src =~ m/\b$macro_name$brackets/) {
         my $tmp = $1;
         $tmp =~ s/^\(|\)$//g;
-        my @args = split(/\s*,\s*/, $tmp);
+        my @args = split(/\s*+,\s*+/, $tmp);
         my $macro = $macro_body;
         return undef if scalar @args != scalar @macro_args;
         for (my $i = 0; $i < scalar @args; $i++) {
             $macro =~ s/(?<!#)#\s*$macro_args[$i]/"$args[$i]"/g;
-            $macro =~ s/(?:(?>##\s*)|\b)$macro_args[$i](?:(?>\s*##)|\b)/$args[$i]/g;
+            $macro =~ s/(?:##\s*|\b)$macro_args[$i](?:\s*##|\b)/$args[$i]/g;
         }
         $$src =~ s/$macro_name\($tmp\)/$macro/;
     }
@@ -199,14 +199,45 @@ sub preprocess_c_std_src($) {
     link_updated:
     my @src_split = split('\n', $$src_link);
     for (my $i = $counter; $i < @src_split; $i++) {
+        foreach (keys %macroses) {
+            if ($src_split[$i] =~ m/\b$_\b/) {
+                next if ($src_split[$i] =~ m/\s*#\s*define\s+$_/);
+                my $macro = $macroses{$_};
+                if ($src_split[$i] =~ m/\b$_\((.*?)\)/) {
+                    my @args = split(/\s*,\s*/, $1);
+                    next if (!$macro->{args} || @args != @{$macro->{args}});
+                    $$src_link =~ s/\Q$src_split[$i]\E/\$_-_DEFINE_SUB_-_\$/;
+                    sub_define_function_like(\$src_split[$i], 
+                                              $macro->{name},
+                                              $macro->{args},
+                                              $macro->{body});
+                    $$src_link =~ s/\$_-_DEFINE_SUB_-_\$/$src_split[$i]/;
+                    $counter = $i;
+                    goto link_updated;
+                } else {
+                    next if $macro->{args};
+                    $$src_link =~ s/\Q$src_split[$i]\E/\$_-_DEFINE_SUB_-_\$/;
+                    sub_define_object_like(\$src_split[$i], 
+                                            $macro->{name},
+                                            $macro->{body});
+                    $$src_link =~ s/\$_-_DEFINE_SUB_-_\$/$src_split[$i]/;
+                    $counter = $i;
+                    goto link_updated;
+                    
+                }
+            }
+        }
+
         $_ = $src_split[$i];
         if ($is_multiline) {
+            $$src_link =~ s/\Q$src_split[$i]\E//;
             $is_multiline = undef unless s/\\$/\n/;
             $macro{body} .= $_;
         } elsif (s/^\s*#\s*define\s+(\w+)//) {
             $macro{name} = $1;
             $macro{args} = $1 if (s/^\((.*?)\)//);
             $macro{body} = $1 if (s/^(.*)$//);
+            $$src_link =~ s/\Q$src_split[$i]\E//;
             $is_multiline = '1' if ($macro{body} =~ s/\\$//);
             if ($macro{args}) {
                 my @args = split(/\s*,\s*/, $macro{args});
@@ -226,7 +257,7 @@ sub preprocess_c_std_src($) {
             goto link_updated;
         } elsif (s/^\s*#\s*undef\s+(\w+)//) {
             $macroses{$1} = undef;
-        }
+        }         
 
         if (%macro && !$is_multiline) {
             my %new_macro = %macro;
@@ -235,21 +266,10 @@ sub preprocess_c_std_src($) {
         }
     }
 
-    $$src_link =~ s/#define[^\n]+\\\n(?:[^\n]*\\\n)*[^\\n]*\n//g;
-    $$src_link =~ s/#define[^\n]+\n//g;
-    $$src_link =~ s/#undef[^\n]+\n//g;
-    
-    foreach (keys %macroses) {
-        my $macro = $macroses{$_};
-        sub_define_object_like  ($src_link, $macro->{name}, 
-                                            $macro->{body}) 
-                                     unless $macro->{args};
-        sub_define_function_like($src_link, $macro->{name},
-                                            $macro->{args},
-                                            $macro->{body})
-                                        if  $macro->{args};
-
-    }
+    $$src_link =~ s/\n{2,}/\n/g;
+#    $$src_link =~ s/\s*#\s*define[^\n]+?\\\n(?:[^\n]*\\\n)*[^\\n]*\n//g;
+#    $$src_link =~ s/\s*#\s*define[^\n]+?\n//g;
+    $$src_link =~ s/\s*#\s*undef[^\n]+?\n//g;
 }
 
 =head1 AUTHOR
