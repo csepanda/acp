@@ -321,12 +321,12 @@ sub parse_local_variables($$) {
     return %variables;
 }
 
-=item B<typeof($)>
+=item B<typeof($$$)>
 
 This function accept function name, trace and variable, which type function must detect.
     Argument 0 is a function's name
     Argument 1 is a variable, which type is nessary to determinate
-    Argument 1 is a trace to this variable
+    Argument 2 is a trace to this variable
     
     Returns type of variable
 =cut
