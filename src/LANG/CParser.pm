@@ -158,7 +158,7 @@ sub parse_source($) {
     # parsing
     parse_typedef ($_        ) foreach @typedefs;
     parse_function($_        ) foreach @functions;
-    parse_variable($_, \%vars) foreach @global_vars;
+    parse_variable($_, \%global_variables) foreach @global_vars;
 }
 
 =item B<parse_function($)>
@@ -350,9 +350,10 @@ sub typeof($$$) {
         }
         return $type;
     } elsif ($trace eq 'arguments') {
-        return $tree->{$trace}->{$var};
+        return $global_variables{$var} 
+                 unless ($type = $tree->{$trace}->{$var});
+        return $type;
     }
-
     return undef;
 }
 
