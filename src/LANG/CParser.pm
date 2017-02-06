@@ -185,7 +185,7 @@ sub parse_function($) {
 
     my %body_vars = parse_body($func_name, $body);
     $func_vars{'body'}  = \%body_vars;
-    $func_descr{'vars'} = \%func_vars;
+    $func_descr{'ast'} = \%func_vars;
     $functions{$func_name} = \%func_descr;
     return %func_descr;
 }
@@ -201,9 +201,10 @@ sub parse_arguments($$) {
     my @splited = split(/,/, $func_args);
     foreach (@splited) {
         my $types_q_regexp = join("|", @types_qualifiers);
-        $_ =~ s/\b$types_q_regexp\b//g;
-        $_ =~ s/ *((?:\** *)*)(?=\w+$)/$1 /;
-        $_ =~ s/\* \*/**/g;
+        s/\b$types_q_regexp\b//g;
+        s/ *((?:\** *)*)(?=\w+$)/$1 /;
+        s/\* \*/**/g;
+        $_ = Util::trim($_);
         my @arg = split(/ (?=\w+$)/, $_, 2);
         die "Wrong argument format: \n" . 
             "\tno type or name --> [" . $_ ."]\n" . 
@@ -230,19 +231,20 @@ sub parse_body($$) {
     my $func_name = shift // return undef;
     my $body      = shift // return undef;
     $body =~ s/\}$//;
-    return parse_local_variables("body", $body);
+    return make_tree("body", $body);
 }
 
 #recursive parse body and its local blocks
-sub parse_local_variables($$);
-sub parse_local_variables($$) {
+sub make_tree($$);
+sub make_tree($$) {
     my $block_name = shift;
     my $block      = shift;
     my $types_regexp = "(?:" . join("|", @types) . ")";
     my $types_q_regexp = join("|", @types_qualifiers);
 
-    my %variables;
+    my %tree;
     my %local_variables;
+    my @local_code;
     my @local_blocks;
 
     $block = Util::trim($block);
@@ -258,12 +260,14 @@ sub parse_local_variables($$) {
         }
     }
 
-    unless ($block =~ s/^(?:if|else ?(?:if)?|for|while|switch) ?(?:\(.*?\))?//) {
-        $block =~ s/^do(.*)while ?\(.*\) ?;/$1/;
+    if ($block =~ s/^(?:if|else ?(?:if)?|for|while|switch) ?(?:\(.*?\))?//) {
+        push(@local_code, $&);
+    } elsif ($block =~ s/^do(.*)(while ?\(.*\)) ?;/$1/) {
+        push(@local_code, $2);
     }
 
     $block = Util::trim($block);
-    $block =~ s/^\{\s+(.*?)\s+\}$/$1/;
+    $block =~ s/^\{\s*(.*)\s*\}$/$1/;
     
     # Cut all local block, loops and branches
     # from function's body and put them in array @local_blocks
@@ -275,18 +279,18 @@ sub parse_local_variables($$) {
     my $while     = '\bwhile ?\(.*?\) ?'       . $statement;
     my $switch    = '\bswitch ?\(.*?\)?'       . $brackets;
     my $do_while  = '\bdo ?' . $statement . ' ?while ?\(.*?\) ?;';
-    my $regex     = "$if|$else|$for|$while|$do_while|$switch|$brackets";
+    my $regex     = "$if|$else|$for|$while|$do_while|$switch|(?<!= )$brackets";
     while ($block =~ s/$regex//) { push(@local_blocks, $&); }
 
     #parse body
     my @splited = split(/;/, $block);
     foreach (@splited) {    
+        $_ = Util::squeeze(Util::trim($_));
         if (m/$types_regexp/) {
-            $_ =~ s/\b$types_q_regexp\b//g;
-            $_ =~ s/ *((?:\** *)*)(?=\w+$)/$1 /;
-            $_ =~ s/\* \*/**/g;
-            $_ = Util::trim($_);
-            $_ = Util::squeeze($_);
+            push(@local_code, $_);
+            s/\b$types_q_regexp\b//g;
+            s/ *((?:\** *)*)(?=\w+$)/$1 /;
+            s/\* \*/**/g;
             if (/^($types_regexp\**) ([^()]+,[^()].*)$/) {                
                 my $type = $1;
                 my @splited_names = split(/,/, $2);
@@ -302,23 +306,26 @@ sub parse_local_variables($$) {
                     $local_variables{$name} = $type;
                 } 
             }
+        } elsif (!/^\s*$/) {            
+            push(@local_code, $_);
         }
     }    
-    $variables{$block_name . "_local"} = \%local_variables;
+    $tree{$block_name . "_local"} = \%local_variables;
+    $tree{$block_name . "_local_code"} = \@local_code;
 
     #local blocks recursive parsing
     if (@local_blocks) {
         my $counter = 0;
         foreach (@local_blocks) {
-           my %lvars = parse_local_variables($block_name . "_" . $counter, $_);
+           my %lvars = make_tree($block_name . "_" . $counter, $_);
            foreach (keys %lvars) {
-               $variables{$_} = $lvars{$_};
+               $tree{$_} = $lvars{$_};
            }
            $counter += 1;
         }
     }
 
-    return %variables;
+    return %tree;
 }
 
 =item B<typeof($$$)>
@@ -337,7 +344,7 @@ sub typeof($$$) {
     my $var       = shift // return undef;
     my $trace     = shift // return undef;
     my $type      = undef;
-    my $tree      = $functions{$func_name}->{'vars'};
+    my $tree      = $functions{$func_name}->{ast};
 
     if ($trace =~ m/body/) {
         $tree  = $tree->{'body'};
