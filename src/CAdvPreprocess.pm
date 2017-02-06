@@ -80,7 +80,7 @@ sub handle_overload_block($) {
                 . "' wasn't found" 
                 unless $type ~~ @LANG::CParser::types;
             push (@types, $type);
-            $regex .= "(\\w+)";
+            $regex .= "\\w+";
             last;
         }
 
@@ -92,7 +92,7 @@ sub handle_overload_block($) {
             unless $type ~~ @LANG::CParser::types;
 
         push(@types, $type);
-        $regex .= "(\\w+)\\s+$op";
+        $regex .= "\\w+\\s+\Q$op\E\\s+";
     }
 
     die "Operator overloading error: wrong expression's arity"
@@ -113,6 +113,93 @@ sub handle_overload_block($) {
     push(@overops, \%ovop);
 
     return $func;
+}
+
+=item B<preprocess_src($)>
+Preprocess C-src with advanced preprocessor. This function preprocess source code only one time in one direction.
+    Argument 0 is a link to string of source code
+=cut
+
+sub preprocess_src($) {
+    my $src_link     = shift // return undef;
+    
+    my $brackets     = '(\{([^}{]*?(?2)?[^}{]*?)+\})';
+    my $func_regexp  = '(?:\w+\s+)+?(\w+)\s*?\([^)(]*?\)\s*?{';
+
+    my $counter      = 0;
+    
+    # Operator overloading.
+    # Each overloaded operator substituted with corresponding function.
+    foreach (@overops) {
+        my $ovop = $_;
+        while ($$src_link =~ m/(?m)^.*($ovop->{regex}).*$/g) {
+            my $line = $&;
+            my $expr = $1;
+            my @vars = ();
+            my $counter = 0;
+    
+            while ($expr) {
+                $counter++;
+                unless ($expr =~ s/(\w+)\s+(\S+)+\s*//) {
+                    die "Operator overloading error: expression '" 
+                        . $expr 
+                        . "' cannot be parsed"
+                        unless ($expr =~ s/(\w+)\s*//);
+                    push (@vars, $1);
+                    last;
+                }
+                push(@vars, $1);                
+            }
+      
+            # Extract a function that contains line with overloaded operator.
+            # Then get function's ast and check types
+            
+            die "Operator overloading error: function cannot be found"
+                 unless ($$src_link =~ m/(?s)$func_regexp.*?\Q$line\E/);
+            my $func_name  = $1;
+            my $func_descr = $LANG::CParser::functions{$func_name};
+            die "Operator overloading error: function wasn't parsed"
+                unless $func_descr;
+
+            my %ast = %{$func_descr->{ast}->{body}};
+
+            my $line_trimmed = Util::trim(Util::squeeze($line));
+            $line_trimmed =~ s/ ?;//;
+            my $trace;
+            # extrude expression's trace from the ast
+            foreach (keys %ast) {                
+                if (m/_code$/) {
+                    $trace = $_;
+                    my @lines = @{$ast{$_}};
+                    foreach (@lines) {
+                        goto breaked 
+                            if ($line_trimmed =~ m/$_/ || 
+                                $_ =~ m/$line_trimmed/);
+                    }
+                }
+            }
+            breaked:
+            $trace =~ s/_code//;
+            # check types
+            for (my $i = 0; $i < scalar @vars; $i++) {
+                unless (@{$ovop->{operands}}[$i] eq 
+                    LANG::CParser::typeof($func_name, $vars[$i], $trace)) {
+                    $trace = undef;
+                    last;        
+                }
+            }
+            next unless $trace;
+
+            my $new_line = $line;
+            my $callback = $ovop->{func} . "(";
+            foreach (@vars) {
+                $callback .= $_ . ",";
+            }
+            $callback =~ s/,$/)/;
+            $new_line =~ s/$ovop->{regex}/$callback/;
+            $$src_link =~ s/\Q$line\E/$new_line/;
+        }
+    }
 }
 
 =head1 AUTHOR
